@@ -17,6 +17,13 @@ WORKDIR /reality
 ENV DEST="" \
     SERVERNAMES="" \
     EXTERNAL_PORT="" \
+    SOCKS5_ENABLED="false" \
+    SOCKS5_LISTEN="0.0.0.0" \
+    SOCKS5_PORT="38442" \
+    SOCKS5_USER="" \
+    SOCKS5_PASS="" \
+    SOCKS5_UDP="true" \
+    SOCKS5_ALLOW_NO_AUTH="false" \
     TZ=Asia/Shanghai
 
 COPY ./entrypoint.sh /

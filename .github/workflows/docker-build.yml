@@ -105,20 +105,35 @@ jobs:
 
           # ---------- 搜索 Dockerfile ----------
           SEARCH_DOCKERFILE=""
-          # 优先顺序: 根目录 > docker/ > .docker/ > 其他子目录
-          for loc in \
-            "$SRC_DIR/Dockerfile" \
-            "$SRC_DIR/docker/Dockerfile" \
-            "$SRC_DIR/.docker/Dockerfile" \
-            "$SRC_DIR/build/Dockerfile"; do
-            if [ -f "$loc" ]; then
-              SEARCH_DOCKERFILE="$loc"
-              echo "  [Dockerfile] ✓ 找到: $loc"
-              break
-            fi
-          done
 
-          # 若仍未找到，递归搜索（排除 .git / node_modules）
+          # ① 优先使用 config.yaml 中配置的 dockerfile 路径
+          CONFIG_DOCKERFILE=$(yq ".repositories[] | select(.name == \"$NAME\") | .dockerfile" config.yaml)
+          if [ "$CONFIG_DOCKERFILE" != "null" ] && [ -n "$CONFIG_DOCKERFILE" ]; then
+            CONFIG_PATH="$SRC_DIR/$CONFIG_DOCKERFILE"
+            if [ -f "$CONFIG_PATH" ]; then
+              SEARCH_DOCKERFILE="$CONFIG_PATH"
+              echo "  [Dockerfile] ✓ 使用配置路径: $CONFIG_DOCKERFILE"
+            else
+              echo "  [Dockerfile] ⚠ 配置路径不存在: $CONFIG_DOCKERFILE，回退到自动搜索"
+            fi
+          fi
+
+          # ② 配置路径未命中，自动搜索（优先顺序: 根目录 > docker/ > .docker/ > 其他）
+          if [ -z "$SEARCH_DOCKERFILE" ]; then
+            for loc in \
+              "$SRC_DIR/Dockerfile" \
+              "$SRC_DIR/docker/Dockerfile" \
+              "$SRC_DIR/.docker/Dockerfile" \
+              "$SRC_DIR/build/Dockerfile"; do
+              if [ -f "$loc" ]; then
+                SEARCH_DOCKERFILE="$loc"
+                echo "  [Dockerfile] ✓ 自动找到: $loc"
+                break
+              fi
+            done
+          fi
+
+          # ③ 仍未找到，递归搜索（排除 .git / node_modules / vendor）
           if [ -z "$SEARCH_DOCKERFILE" ]; then
             SEARCH_DOCKERFILE=$(find "$SRC_DIR" -maxdepth 3 \
               -name "Dockerfile" \
@@ -126,12 +141,12 @@ jobs:
               -not -path "*/node_modules/*" \
               -not -path "*/vendor/*" 2>/dev/null | head -1)
             if [ -n "$SEARCH_DOCKERFILE" ]; then
-              echo "  [Dockerfile] ✓ 找到: $SEARCH_DOCKERFILE"
+              echo "  [Dockerfile] ✓ 递归找到: $SEARCH_DOCKERFILE"
             fi
           fi
 
           if [ -z "$SEARCH_DOCKERFILE" ]; then
-            echo "  [Dockerfile] ✗ 源仓库中未找到"
+            echo "  [Dockerfile] ✗ 未找到"
           fi
 
           # ---------- 搜索 docker-compose ----------
@@ -257,8 +272,11 @@ jobs:
           # 如果没找到 Dockerfile，报错退出
           if [ "$DOCKERFILE_FOUND" != "true" ]; then
             echo ""
-            echo "  ERROR: 在源仓库中未找到 Dockerfile！"
-            echo "  已搜索位置："
+            echo "  ERROR: 未找到 Dockerfile！"
+            echo "  解决方式："
+            echo "    1. 在 config.yaml 中为该仓库设置 dockerfile 字段指定路径"
+            echo "    2. 或在源仓库中添加 Dockerfile"
+            echo "  自动搜索位置："
             echo "    - <repo>/Dockerfile"
             echo "    - <repo>/docker/Dockerfile"
             echo "    - <repo>/.docker/Dockerfile"

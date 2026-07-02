@@ -15,133 +15,175 @@ on:
     paths:
       - 'dockerfiles/**'
       - 'config.yaml'
-  workflow_dispatch:  # 手动触发
+  workflow_dispatch:
 
 jobs:
-  build:
+  # 第一步：读取 config.yaml 生成构建矩阵
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      repos: ${{ steps.set-matrix.outputs.repos }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Generate build matrix from config.yaml
+        id: set-matrix
+        run: |
+          # 读取 config.yaml 中的 repositories 列表，输出 JSON 矩阵
+          repos=$(yq -o=json '.repositories' config.yaml)
+          echo "repos=$repos" >> $GITHUB_OUTPUT
+          echo "Config loaded: $(echo "$repos" | jq -c)"
+
+  # 第二步：按矩阵并行构建每个仓库
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false   # 单个仓库构建失败不影响其他
+      matrix:
+        repo: ${{ fromJSON(needs.prepare.outputs.repos) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to DockerHub
-        uses: docker/login-action@v2
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Install yq
+      - name: Install tools
         run: |
-          wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
+          wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
-          sudo apt-get update && sudo apt-get install -y jq  # 使用apt安装jq
+          sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
-      - name: Clone repositories
+      # ---- 步骤 A：克隆源码 ----
+      - name: Clone source repository
         run: |
-          for i in $(seq 0 $(($(yq '.repositories | length' config.yaml) - 1))); do
-            name=$(yq ".repositories[$i].name" config.yaml)
-            repo_dir="dockerfiles/$name/repo"
+          NAME="${{ matrix.repo.name }}"
+          REPO_URL="${{ matrix.repo.repo_url }}"
+          BRANCH="${{ matrix.repo.branch }}"
+          REPO_DIR="dockerfiles/$NAME/repo"
 
-            echo "$repo_dir"
-            mkdir -p "$repo_dir"
+          echo "=== [$NAME] 克隆源码 ==="
+          echo "  URL:    $REPO_URL"
+          echo "  Branch: $BRANCH"
+          echo "  Target: $REPO_DIR"
 
-            git clone $(yq ".repositories[$i].repo_url" config.yaml) $repo_dir
-            ls -l "$repo_dir"
-          done
+          mkdir -p "$REPO_DIR"
+          git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$REPO_DIR"
+          echo "=== [$NAME] 克隆完成，文件列表：==="
+          ls -la "$REPO_DIR" | head -20
 
-      - name: Download releases
+      # ---- 步骤 B：下载 Release（如果配置了 release_name） ----
+      - name: Download GitHub Release
         run: |
-          for i in $(seq 0 $(($(yq '.repositories | length' config.yaml) - 1))); do
-            # 修改目录结构为 dockerfiles/name/release
-            name=$(yq ".repositories[$i].name" config.yaml)
-            release_dir="dockerfiles/$name/release"
-            echo "$release_dir"
-            mkdir -p "$release_dir"
-            
-            repo_url=$(yq ".repositories[$i].repo_url" config.yaml)
-            owner=$(echo "$repo_url" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
-            repo=$(echo "$repo_url" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
-            
-            # 获取配置中的release_name，如果未配置则使用默认格式
-            release_name=$(yq ".repositories[$i].release_name" config.yaml)
-            if [ "$release_name" == "null" ]; then
-              echo "错误：$name 未配置 release_name，跳过下载"
-              continue
-            fi
-            
-            # 获取最新release的信息
-            latest_release=$(curl -s "https://api.github.com/repos/${owner}/${repo}/releases/latest")
-            latest_tag=$(echo "$latest_release" | jq -r '.tag_name')
-            
-            # 从assets中查找匹配release_name的文件
-            download_url=$(echo "$latest_release" | jq -r --arg name "$release_name" '.assets[] | select(.name | contains($name)) | .browser_download_url')
-            
-            if [ -z "$download_url" ]; then
-              echo "错误：未找到匹配 $release_name 的资源，跳过下载"
-              continue
-            fi
-            
-            echo "下载 $download_url 到 $release_dir/${release_name}"
-            curl -L -o "$release_dir/${release_name}" "$download_url"
-            
-            # 确保解压后的文件名正确
-            tar xzf "$release_dir/${release_name}" -C "$release_dir"
-            echo "解压后的文件列表："
-            ls -l "$release_dir"
-          done
+          NAME="${{ matrix.repo.name }}"
+          REPO_URL="${{ matrix.repo.repo_url }}"
+          RELEASE_NAME="${{ matrix.repo.release_name }}"
 
-      - name: Build and push images
+          if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
+            echo "=== [$NAME] 未配置 release_name，跳过下载 ==="
+            exit 0
+          fi
+
+          RELEASE_DIR="dockerfiles/$NAME/release"
+          mkdir -p "$RELEASE_DIR"
+
+          # 从 repo_url 提取 owner/repo
+          OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
+          GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+
+          echo "=== [$NAME] 获取最新 Release: $OWNER/$GH_REPO ==="
+          LATEST=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest")
+          TAG=$(echo "$LATEST" | jq -r '.tag_name')
+          echo "  Latest tag: $TAG"
+
+          # 模糊匹配 release_name
+          DOWNLOAD_URL=$(echo "$LATEST" | jq -r --arg name "$RELEASE_NAME" \
+            '.assets[] | select(.name | contains($name)) | .browser_download_url')
+
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+            echo "=== [$NAME] 未找到匹配 '$RELEASE_NAME' 的资源，跳过 ==="
+            exit 0
+          fi
+
+          FILENAME=$(basename "$DOWNLOAD_URL")
+          echo "  Download: $DOWNLOAD_URL"
+          curl -L -o "$RELEASE_DIR/$FILENAME" "$DOWNLOAD_URL"
+
+          # 自动解压 tar.gz
+          if echo "$FILENAME" | grep -qE '\.(tar\.gz|tgz)$'; then
+            echo "  解压 $FILENAME -> $RELEASE_DIR/"
+            tar xzf "$RELEASE_DIR/$FILENAME" -C "$RELEASE_DIR"
+          fi
+
+          echo "=== [$NAME] Release 文件：==="
+          ls -la "$RELEASE_DIR"
+
+      # ---- 步骤 C：构建并推送镜像 ----
+      - name: Build and push Docker image
         run: |
-          for i in $(seq 0 $(($(yq '.repositories | length' config.yaml) - 1))); do
-            name=$(yq ".repositories[$i].name" config.yaml)
-            repo_url=$(yq ".repositories[$i].repo_url" config.yaml)
-            branch=$(yq ".repositories[$i].branch" config.yaml)
-            
-            if [ -z "$repo_url" ] || [ "$repo_url" == "null" ]; then
-              echo "Error: repo_url is empty for $name"
-              exit 1
-            fi
-            
-            dockerfile="./dockerfiles/$name/Dockerfile"
-            image_name="${{ secrets.DOCKERHUB_USERNAME }}/$name"
-            
-            echo "Processing $name..."
-            
-            # 构建参数
-            build_args=""
-            work_dir="dockerfiles/$name"
-            if echo "$repo" | yq '.build_args' - | grep -q .; then
-              echo "Processing build args..."
-              while IFS= read -r line; do
-                if [[ -n "$line" ]]; then
-                  key=$(echo "$line" | cut -d: -f1 | xargs) 
-                  value=$(echo "$line" | cut -d: -f2- | sed 's/^[[:space:]]*//' | xargs) 
-                  if [ -z "$key" ]; then
-                      echo "Warning: Skipping build arg with empty key from line: '$line' for $name"
-                      continue 
-                  fi
-                  echo "Adding build arg $key=$value"
-                  build_args="$build_args --build-arg $key=$value"
-                fi
-              done < <(echo "$repo" | yq '.build_args | to_entries | .[] | .key + ": " + .value' -)
-              echo "Final build args: $build_args"
-            fi
-            
-            # 构建并推送镜像
-            docker buildx build \
-              --platform linux/amd64,linux/arm64 \
-              $build_args \
-              -t "$image_name:latest" \
-              -t "$image_name:$(date +%Y%m%d)" \
-              -f "$dockerfile" \
-              "$work_dir" \
-              --push
-            
-            echo "Successfully built and pushed $image_name"
-          done <<< "$repos"
+          NAME="${{ matrix.repo.name }}"
+          DOCKERFILE="./dockerfiles/$NAME/Dockerfile"
+          WORK_DIR="dockerfiles/$NAME"
+          IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/$NAME"
+          DATE_TAG="$(date +%Y%m%d)"
+
+          echo "=== [$NAME] 构建镜像 ==="
+          echo "  Dockerfile: $DOCKERFILE"
+          echo "  Context:    $WORK_DIR"
+          echo "  Image:      $IMAGE_NAME:latest, $IMAGE_NAME:$DATE_TAG"
+
+          if [ ! -f "$DOCKERFILE" ]; then
+            echo "ERROR: Dockerfile not found: $DOCKERFILE"
+            exit 1
+          fi
+
+          # 从 config.yaml 中读取当前仓库的 build_args
+          BUILD_ARGS=""
+          BUILD_ARGS_YAML=$(yq ".repositories[] | select(.name == \"$NAME\") | .build_args" config.yaml)
+          if [ "$BUILD_ARGS_YAML" != "null" ] && [ -n "$BUILD_ARGS_YAML" ]; then
+            echo "  Build args found, parsing..."
+            while IFS='=' read -r key value; do
+              if [ -n "$key" ] && [ -n "$value" ]; then
+                BUILD_ARGS="$BUILD_ARGS --build-arg $key=$value"
+                echo "    ARG: $key=$value"
+              fi
+            done < <(yq -r ".repositories[] | select(.name == \"$NAME\") | .build_args | to_entries | .[] | .key + \"=\" + .value" config.yaml)
+          fi
+
+          # 构建平台和推送标志
+          PLATFORM="linux/amd64,linux/arm64"
+          PUSH_FLAG=""
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            PUSH_FLAG="--push"
+          fi
+
+          docker buildx build \
+            --platform "$PLATFORM" \
+            $BUILD_ARGS \
+            -t "$IMAGE_NAME:latest" \
+            -t "$IMAGE_NAME:$DATE_TAG" \
+            -f "$DOCKERFILE" \
+            "$WORK_DIR" \
+            $PUSH_FLAG
+
+          echo "=== [$NAME] 构建成功 ==="
+          if [ -n "$PUSH_FLAG" ]; then
+            echo "  已推送: $IMAGE_NAME:latest, $IMAGE_NAME:$DATE_TAG"
+          fi

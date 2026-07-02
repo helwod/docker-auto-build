@@ -36,9 +36,9 @@ jobs:
         id: set-matrix
         run: |
           # 读取 config.yaml 中的 repositories 列表，输出 JSON 矩阵
-          repos=$(yq -o=json '.repositories' config.yaml)
+          repos=$(yq -o=json -I=0 '.repositories' config.yaml)
           echo "repos=$repos" >> $GITHUB_OUTPUT
-          echo "Config loaded: $(echo "$repos" | jq -c)"
+          echo "Config loaded: $repos"
 
   # 第二步：按矩阵并行构建每个仓库
   build:

@@ -1,25 +1,17 @@
 # 需要自动构建的Docker镜像配置
-# dockerfile:    源仓库内 Dockerfile 的相对路径（可选，不配置则自动搜索）
-# release_name:  单个 Release 文件名 或 多个文件名列表
-# release_path:  Release 产物放置到源仓库的相对路径（列表模式下会自动按架构分子目录）
+# release_name:  Release 文件名（配置后自动下载到 dockerfiles/<name>/release/）
+# context:       构建上下文（可选，local=dockerfiles/<name>/，repo=dockerfiles/<name>/repo/）
+#                默认：有 release_name → local，无 release_name → repo
 repositories:
   - name: realm
     repo_url: https://github.com/zhboner/realm.git
     branch: master
-    release_name:
-      - realm-x86_64-unknown-linux-musl.tar.gz
-      - realm-aarch64-unknown-linux-musl.tar.gz
-      - realm-slim-x86_64-unknown-linux-musl.tar.gz
-      - realm-slim-aarch64-unknown-linux-musl.tar.gz
-    dockerfile: Dockerfile
-    release_path: out
+    release_name: realm-x86_64-unknown-linux-musl.tar.gz
 
   - name: mermaid-live-editor
     repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
     branch: develop
-    dockerfile: Dockerfile
 
   #- name: qwerty-learner
   #  repo_url: https://github.com/RealKai42/qwerty-learner.git
   #  branch: main
-  #  dockerfile: Dockerfile

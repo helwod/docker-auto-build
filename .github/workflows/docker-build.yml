@@ -6,14 +6,14 @@ on:
       - main
       - master
     paths:
-      - 'dockerfiles/**'
+      - '.github/workflows/**'
       - 'config.yaml'
   pull_request:
     branches:
       - main
       - master
     paths:
-      - 'dockerfiles/**'
+      - '.github/workflows/**'
       - 'config.yaml'
   workflow_dispatch:
 
@@ -35,7 +35,6 @@ jobs:
       - name: Generate build matrix from config.yaml
         id: set-matrix
         run: |
-          # 读取 config.yaml 中的 repositories 列表，输出 JSON 矩阵
           repos=$(yq -o=json -I=0 '.repositories' config.yaml)
           echo "repos=$repos" >> $GITHUB_OUTPUT
           echo "Config loaded: $repos"
@@ -45,7 +44,7 @@ jobs:
     needs: prepare
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false   # 单个仓库构建失败不影响其他
+      fail-fast: false
       matrix:
         repo: ${{ fromJSON(needs.prepare.outputs.repos) }}
     steps:
@@ -71,25 +70,129 @@ jobs:
           chmod +x /usr/local/bin/yq
           sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
-      # ---- 步骤 A：克隆源码 ----
+      # ==== 克隆源仓库 ====
       - name: Clone source repository
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
           BRANCH="${{ matrix.repo.branch }}"
-          REPO_DIR="dockerfiles/$NAME/repo"
+          REPO_DIR="/tmp/build/$NAME"
 
           echo "=== [$NAME] 克隆源码 ==="
           echo "  URL:    $REPO_URL"
           echo "  Branch: $BRANCH"
-          echo "  Target: $REPO_DIR"
 
+          rm -rf "$REPO_DIR"
           mkdir -p "$REPO_DIR"
           git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$REPO_DIR"
-          echo "=== [$NAME] 克隆完成，文件列表：==="
+          echo "  克隆完成，根目录文件："
           ls -la "$REPO_DIR" | head -20
 
-      # ---- 步骤 B：下载 Release（如果配置了 release_name） ----
+      # ==== 步骤 A：从源仓库自动发现构建文件 ====
+      - name: Auto-detect build files from source repo
+        id: detect
+        run: |
+          NAME="${{ matrix.repo.name }}"
+          SRC_DIR="/tmp/build/$NAME"
+          BUILD_DIR="/tmp/build/$NAME-context"
+          mkdir -p "$BUILD_DIR"
+
+          echo "============================================"
+          echo "  [$NAME] 搜索构建文件"
+          echo "============================================"
+          echo "  搜索目录: $SRC_DIR"
+          echo ""
+
+          # ---------- 搜索 Dockerfile ----------
+          SEARCH_DOCKERFILE=""
+          # 优先顺序: 根目录 > docker/ > .docker/ > 其他子目录
+          for loc in \
+            "$SRC_DIR/Dockerfile" \
+            "$SRC_DIR/docker/Dockerfile" \
+            "$SRC_DIR/.docker/Dockerfile" \
+            "$SRC_DIR/build/Dockerfile"; do
+            if [ -f "$loc" ]; then
+              SEARCH_DOCKERFILE="$loc"
+              echo "  [Dockerfile] ✓ 找到: $loc"
+              break
+            fi
+          done
+
+          # 若仍未找到，递归搜索（排除 .git / node_modules）
+          if [ -z "$SEARCH_DOCKERFILE" ]; then
+            SEARCH_DOCKERFILE=$(find "$SRC_DIR" -maxdepth 3 \
+              -name "Dockerfile" \
+              -not -path "*/.git/*" \
+              -not -path "*/node_modules/*" \
+              -not -path "*/vendor/*" 2>/dev/null | head -1)
+            if [ -n "$SEARCH_DOCKERFILE" ]; then
+              echo "  [Dockerfile] ✓ 找到: $SEARCH_DOCKERFILE"
+            fi
+          fi
+
+          if [ -z "$SEARCH_DOCKERFILE" ]; then
+            echo "  [Dockerfile] ✗ 源仓库中未找到"
+          fi
+
+          # ---------- 搜索 docker-compose ----------
+          SEARCH_COMPOSE=$(find "$SRC_DIR" -maxdepth 2 \
+            \( -name "docker-compose.yaml" -o -name "docker-compose.yml" \
+               -o -name "compose.yaml" -o -name "compose.yml" \) \
+            -not -path "*/.git/*" \
+            -not -path "*/node_modules/*" 2>/dev/null | head -1)
+          if [ -n "$SEARCH_COMPOSE" ]; then
+            echo "  [docker-compose] ✓ 找到: $SEARCH_COMPOSE"
+            cp "$SEARCH_COMPOSE" "$BUILD_DIR/"
+          else
+            echo "  [docker-compose] ✗ 未找到"
+          fi
+
+          # ---------- 搜索 .env ----------
+          SEARCH_ENV=$(find "$SRC_DIR" -maxdepth 2 \
+            \( -name ".env" -o -name ".env.example" -o -name ".env.template" -o -name ".env.production" \) \
+            -not -path "*/.git/*" \
+            -not -path "*/node_modules/*" 2>/dev/null | head -1)
+          if [ -n "$SEARCH_ENV" ]; then
+            echo "  [.env] ✓ 找到: $SEARCH_ENV"
+            cp "$SEARCH_ENV" "$BUILD_DIR/.env"
+          else
+            echo "  [.env] ✗ 未找到"
+          fi
+
+          # ---------- 输出检测结果 ----------
+          # Dockerfile 相对路径（相对于源仓库根目录）
+          if [ -n "$SEARCH_DOCKERFILE" ]; then
+            DOCKERFILE_REL="${SEARCH_DOCKERFILE#$SRC_DIR/}"
+            echo "dockerfile_found=true" >> $GITHUB_OUTPUT
+            echo "dockerfile_path=$SEARCH_DOCKERFILE" >> $GITHUB_OUTPUT
+            echo "dockerfile_rel=$DOCKERFILE_REL" >> $GITHUB_OUTPUT
+            # 构建上下文为源仓库根目录（Dockerfile COPY 路径相对根目录）
+            echo "build_context=$SRC_DIR" >> $GITHUB_OUTPUT
+          else
+            echo "dockerfile_found=false" >> $GITHUB_OUTPUT
+            # 没有 Dockerfile 时，复制源码到 context 目录供后续使用
+            echo "build_context=$BUILD_DIR" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "$SEARCH_COMPOSE" ]; then
+            echo "compose_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "compose_found=false" >> $GITHUB_OUTPUT
+          fi
+
+          if [ -n "$SEARCH_ENV" ]; then
+            echo "env_found=true" >> $GITHUB_OUTPUT
+          else
+            echo "env_found=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo ""
+          echo "  检测结果："
+          echo "    Dockerfile:     $([ -n "$SEARCH_DOCKERFILE" ] && echo "$SEARCH_DOCKERFILE" || echo "未找到")"
+          echo "    docker-compose: $([ -n "$SEARCH_COMPOSE" ] && echo "$SEARCH_COMPOSE" || echo "未找到")"
+          echo "    .env:           $([ -n "$SEARCH_ENV" ] && echo "$SEARCH_ENV" || echo "未找到")"
+
+      # ==== 步骤 B：下载 GitHub Release ====
       - name: Download GitHub Release
         run: |
           NAME="${{ matrix.repo.name }}"
@@ -97,93 +200,116 @@ jobs:
           RELEASE_NAME="${{ matrix.repo.release_name }}"
 
           if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
-            echo "=== [$NAME] 未配置 release_name，跳过下载 ==="
+            echo "=== [$NAME] 未配置 release_name，跳过 ==="
             exit 0
           fi
 
-          RELEASE_DIR="dockerfiles/$NAME/release"
+          RELEASE_DIR="/tmp/build/$NAME/release"
           mkdir -p "$RELEASE_DIR"
 
-          # 从 repo_url 提取 owner/repo
           OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
           GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
 
-          echo "=== [$NAME] 获取最新 Release: $OWNER/$GH_REPO ==="
+          echo "=== [$NAME] 获取 Release: $OWNER/$GH_REPO ==="
           LATEST=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest")
           TAG=$(echo "$LATEST" | jq -r '.tag_name')
-          echo "  Latest tag: $TAG"
+          echo "  Latest: $TAG"
 
-          # 模糊匹配 release_name
           DOWNLOAD_URL=$(echo "$LATEST" | jq -r --arg name "$RELEASE_NAME" \
             '.assets[] | select(.name | contains($name)) | .browser_download_url')
 
           if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-            echo "=== [$NAME] 未找到匹配 '$RELEASE_NAME' 的资源，跳过 ==="
+            echo "=== [$NAME] 未匹配 '$RELEASE_NAME'，跳过 ==="
             exit 0
           fi
 
           FILENAME=$(basename "$DOWNLOAD_URL")
-          echo "  Download: $DOWNLOAD_URL"
           curl -L -o "$RELEASE_DIR/$FILENAME" "$DOWNLOAD_URL"
 
-          # 自动解压 tar.gz
           if echo "$FILENAME" | grep -qE '\.(tar\.gz|tgz)$'; then
-            echo "  解压 $FILENAME -> $RELEASE_DIR/"
             tar xzf "$RELEASE_DIR/$FILENAME" -C "$RELEASE_DIR"
           fi
-
-          echo "=== [$NAME] Release 文件：==="
+          echo "=== [$NAME] Release 下载完成 ==="
           ls -la "$RELEASE_DIR"
 
-      # ---- 步骤 C：构建并推送镜像 ----
+          # 输出 release 目录路径
+          echo "release_dir=$RELEASE_DIR" >> $GITHUB_OUTPUT
+
+      # ==== 步骤 C：构建并推送镜像 ====
       - name: Build and push Docker image
         run: |
           NAME="${{ matrix.repo.name }}"
-          DOCKERFILE="./dockerfiles/$NAME/Dockerfile"
-          WORK_DIR="dockerfiles/$NAME"
           IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/$NAME"
           DATE_TAG="$(date +%Y%m%d)"
+          SRC_DIR="/tmp/build/$NAME"
 
-          echo "=== [$NAME] 构建镜像 ==="
-          echo "  Dockerfile: $DOCKERFILE"
-          echo "  Context:    $WORK_DIR"
-          echo "  Image:      $IMAGE_NAME:latest, $IMAGE_NAME:$DATE_TAG"
+          DOCKERFILE_FOUND="${{ steps.detect.outputs.dockerfile_found }}"
+          DOCKERFILE_PATH="${{ steps.detect.outputs.dockerfile_path }}"
+          BUILD_CONTEXT="${{ steps.detect.outputs.build_context }}"
+          COMPOSE_FOUND="${{ steps.detect.outputs.compose_found }}"
 
-          if [ ! -f "$DOCKERFILE" ]; then
-            echo "ERROR: Dockerfile not found: $DOCKERFILE"
+          echo "============================================"
+          echo "  [$NAME] 构建镜像"
+          echo "============================================"
+          echo "  Image:        $IMAGE_NAME:latest"
+          echo "                $IMAGE_NAME:$DATE_TAG"
+
+          # 如果没找到 Dockerfile，报错退出
+          if [ "$DOCKERFILE_FOUND" != "true" ]; then
+            echo ""
+            echo "  ERROR: 在源仓库中未找到 Dockerfile！"
+            echo "  已搜索位置："
+            echo "    - <repo>/Dockerfile"
+            echo "    - <repo>/docker/Dockerfile"
+            echo "    - <repo>/.docker/Dockerfile"
+            echo "    - <repo>/build/Dockerfile"
+            echo "    - <repo>/*/Dockerfile (递归 maxdepth=3)"
+            echo ""
             exit 1
           fi
 
-          # 从 config.yaml 中读取当前仓库的 build_args
+          echo "  Dockerfile:   $DOCKERFILE_PATH"
+          echo "  Context:      $BUILD_CONTEXT"
+          if [ "$COMPOSE_FOUND" = "true" ]; then
+            echo "  Compose:      $SRC_DIR/docker-compose.yaml (已拷贝到 context)"
+          fi
+
+          # 从 config.yaml 读取 build_args
           BUILD_ARGS=""
           BUILD_ARGS_YAML=$(yq ".repositories[] | select(.name == \"$NAME\") | .build_args" config.yaml)
           if [ "$BUILD_ARGS_YAML" != "null" ] && [ -n "$BUILD_ARGS_YAML" ]; then
-            echo "  Build args found, parsing..."
             while IFS='=' read -r key value; do
               if [ -n "$key" ] && [ -n "$value" ]; then
                 BUILD_ARGS="$BUILD_ARGS --build-arg $key=$value"
-                echo "    ARG: $key=$value"
+                echo "  Build arg:    $key=$value"
               fi
             done < <(yq -r ".repositories[] | select(.name == \"$NAME\") | .build_args | to_entries | .[] | .key + \"=\" + .value" config.yaml)
           fi
 
-          # 构建平台和推送标志
+          # 平台 & 推送标志
           PLATFORM="linux/amd64,linux/arm64"
           PUSH_FLAG=""
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             PUSH_FLAG="--push"
           fi
 
+          echo ""
+          echo "  开始构建..."
+
           docker buildx build \
             --platform "$PLATFORM" \
             $BUILD_ARGS \
             -t "$IMAGE_NAME:latest" \
             -t "$IMAGE_NAME:$DATE_TAG" \
-            -f "$DOCKERFILE" \
-            "$WORK_DIR" \
+            -f "$DOCKERFILE_PATH" \
+            "$BUILD_CONTEXT" \
             $PUSH_FLAG
 
-          echo "=== [$NAME] 构建成功 ==="
+          echo ""
+          echo "============================================"
+          echo "  [$NAME] ✓ 构建成功"
           if [ -n "$PUSH_FLAG" ]; then
-            echo "  已推送: $IMAGE_NAME:latest, $IMAGE_NAME:$DATE_TAG"
+            echo "  已推送: $IMAGE_NAME:latest"
+            echo "         $IMAGE_NAME:$DATE_TAG"
           fi
+          echo "============================================"

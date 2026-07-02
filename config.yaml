@@ -5,9 +5,9 @@ repositories:
     branch: master
     release_name: realm-x86_64-unknown-linux-musl.tar.gz
 
-  - name: reality
-    repo_url: https://github.com/XTLS/Xray-core.git
-    branch: main
+  #- name: reality
+  #  repo_url: https://github.com/XTLS/Xray-core.git
+  #  branch: main
 
   - name: mermaid-live-editor
     repo_url: https://github.com/mermaid-js/mermaid-live-editor.git

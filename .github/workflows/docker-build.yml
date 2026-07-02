@@ -27,7 +27,7 @@ jobs:
       repos: ${{ steps.set-matrix.outputs.repos }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install yq
         run: |
@@ -51,7 +51,7 @@ jobs:
         repo: ${{ fromJSON(needs.prepare.outputs.repos) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3

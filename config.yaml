@@ -1,14 +1,13 @@
 # 需要自动构建的Docker镜像配置
-# dockerfile: 源仓库内 Dockerfile 的相对路径（可选，不配置则自动搜索）
-#   - Dockerfile               → 源仓库根目录
-#   - docker/Dockerfile         → 源仓库 docker/ 目录下
-#   - build/package/Dockerfile  → 任意嵌套子目录
+# dockerfile:    源仓库内 Dockerfile 的相对路径（可选，不配置则自动搜索）
+# release_path:  下载的 Release 解压后放置到源仓库的相对路径（可选）
 repositories:
   - name: realm
     repo_url: https://github.com/zhboner/realm.git
     branch: master
     release_name: realm-x86_64-unknown-linux-musl.tar.gz
     dockerfile: Dockerfile
+    release_path: out/x86_64-unknown-linux-musl
 
   - name: mermaid-live-editor
     repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
@@ -19,3 +18,4 @@ repositories:
   #  repo_url: https://github.com/RealKai42/qwerty-learner.git
   #  branch: main
   #  dockerfile: Dockerfile
+

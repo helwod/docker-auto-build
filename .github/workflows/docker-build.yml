@@ -209,10 +209,12 @@ jobs:
 
       # ==== 步骤 B：下载 GitHub Release ====
       - name: Download GitHub Release
+        id: release
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
           RELEASE_NAME="${{ matrix.repo.release_name }}"
+          SRC_DIR="/tmp/build/$NAME"
 
           if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
             echo "=== [$NAME] 未配置 release_name，跳过 ==="
@@ -247,7 +249,17 @@ jobs:
           echo "=== [$NAME] Release 下载完成 ==="
           ls -la "$RELEASE_DIR"
 
-          # 输出 release 目录路径
+          # 如果配置了 release_path，把产物复制到源仓库对应目录
+          RELEASE_PATH=$(yq ".repositories[] | select(.name == \"$NAME\") | .release_path" config.yaml)
+          if [ "$RELEASE_PATH" != "null" ] && [ -n "$RELEASE_PATH" ]; then
+            TARGET_DIR="$SRC_DIR/$RELEASE_PATH"
+            mkdir -p "$TARGET_DIR"
+            echo "=== [$NAME] 复制 Release 产物到 $RELEASE_PATH ==="
+            cp -a "$RELEASE_DIR"/* "$TARGET_DIR/"
+            echo "  目标目录内容："
+            ls -la "$TARGET_DIR"
+          fi
+
           echo "release_dir=$RELEASE_DIR" >> $GITHUB_OUTPUT
 
       # ==== 步骤 C：构建并推送镜像 ====

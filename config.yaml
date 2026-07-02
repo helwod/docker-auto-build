@@ -6,18 +6,13 @@ repositories:
   - name: realm
     repo_url: https://github.com/zhboner/realm.git
     branch: master
-    release_name:
-      - realm-x86_64-unknown-linux-musl.tar.gz
-      - realm-aarch64-unknown-linux-musl.tar.gz
-      - realm-slim-x86_64-unknown-linux-musl.tar.gz
-      - realm-slim-aarch64-unknown-linux-musl.tar.gz
-    dockerfile: Dockerfile
+    release_name: realm-x86_64-unknown-linux-musl.tar.gz
     release_path: out
 
-  - name: mermaid-live-editor
-    repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
-    branch: develop
-    dockerfile: Dockerfile
+  #- name: mermaid-live-editor
+  #  repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
+  #  branch: develop
+  #  dockerfile: Dockerfile
 
   #- name: qwerty-learner
   #  repo_url: https://github.com/RealKai42/qwerty-learner.git

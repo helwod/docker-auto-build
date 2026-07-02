@@ -213,10 +213,17 @@ jobs:
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
-          RELEASE_NAME="${{ matrix.repo.release_name }}"
           SRC_DIR="/tmp/build/$NAME"
 
-          if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
+          # 读取 release_name，支持字符串或数组
+          IS_ARRAY=$(yq ".repositories[] | select(.name == \"$NAME\") | .release_name | type" config.yaml)
+          if [ "$IS_ARRAY" = "array" ]; then
+            RELEASE_NAMES=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .release_name[]" config.yaml)
+          else
+            RELEASE_NAMES=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .release_name" config.yaml)
+          fi
+
+          if [ -z "$RELEASE_NAMES" ] || [ "$RELEASE_NAMES" = "null" ]; then
             echo "=== [$NAME] 未配置 release_name，跳过 ==="
             exit 0
           fi
@@ -232,33 +239,52 @@ jobs:
           TAG=$(echo "$LATEST" | jq -r '.tag_name')
           echo "  Latest: $TAG"
 
-          DOWNLOAD_URL=$(echo "$LATEST" | jq -r --arg name "$RELEASE_NAME" \
-            '.assets[] | select(.name | contains($name)) | .browser_download_url')
-
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-            echo "=== [$NAME] 未匹配 '$RELEASE_NAME'，跳过 ==="
-            exit 0
+          # 读取 release_path 配置
+          RELEASE_PATH=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .release_path" config.yaml)
+          if [ "$RELEASE_PATH" = "null" ] || [ -z "$RELEASE_PATH" ]; then
+            RELEASE_PATH="release"
           fi
 
-          FILENAME=$(basename "$DOWNLOAD_URL")
-          curl -L -o "$RELEASE_DIR/$FILENAME" "$DOWNLOAD_URL"
+          for RELEASE_NAME in $RELEASE_NAMES; do
+            echo ""
+            echo "  查找: $RELEASE_NAME"
 
-          if echo "$FILENAME" | grep -qE '\.(tar\.gz|tgz)$'; then
-            tar xzf "$RELEASE_DIR/$FILENAME" -C "$RELEASE_DIR"
-          fi
-          echo "=== [$NAME] Release 下载完成 ==="
-          ls -la "$RELEASE_DIR"
+            DOWNLOAD_URL=$(echo "$LATEST" | jq -r --arg name "$RELEASE_NAME" \
+              '.assets[] | select(.name | contains($name)) | .browser_download_url')
 
-          # 如果配置了 release_path，把产物复制到源仓库对应目录
-          RELEASE_PATH=$(yq ".repositories[] | select(.name == \"$NAME\") | .release_path" config.yaml)
-          if [ "$RELEASE_PATH" != "null" ] && [ -n "$RELEASE_PATH" ]; then
-            TARGET_DIR="$SRC_DIR/$RELEASE_PATH"
+            if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+              echo "  ⚠ 未匹配 '$RELEASE_NAME'，跳过"
+              continue
+            fi
+
+            FILENAME=$(basename "$DOWNLOAD_URL")
+            echo "  下载: $FILENAME"
+
+            # 每个 release 单独目录，避免互相污染
+            PER_RELEASE_DIR="$RELEASE_DIR/$RELEASE_NAME"
+            mkdir -p "$PER_RELEASE_DIR"
+            curl -L -o "$PER_RELEASE_DIR/$FILENAME" "$DOWNLOAD_URL"
+
+            if echo "$FILENAME" | grep -qE '\.(tar\.gz|tgz)$'; then
+              tar xzf "$PER_RELEASE_DIR/$FILENAME" -C "$PER_RELEASE_DIR"
+              rm -f "$PER_RELEASE_DIR/$FILENAME"
+            fi
+
+            # 确定目标目录
+            if [ "$IS_ARRAY" = "array" ]; then
+              # 从文件名推导平台目录：realm-x86_64-unknown-linux-musl.tar.gz -> x86_64-unknown-linux-musl
+              PLATFORM=$(basename "$FILENAME" .tar.gz | sed 's/^[^-]*-//')
+              TARGET_DIR="$SRC_DIR/$RELEASE_PATH/$PLATFORM"
+            else
+              TARGET_DIR="$SRC_DIR/$RELEASE_PATH"
+            fi
+
             mkdir -p "$TARGET_DIR"
-            echo "=== [$NAME] 复制 Release 产物到 $RELEASE_PATH ==="
-            cp -a "$RELEASE_DIR"/* "$TARGET_DIR/"
-            echo "  目标目录内容："
+            cp -a "$PER_RELEASE_DIR"/* "$TARGET_DIR/"
+            echo "  已放置到: $TARGET_DIR"
+            echo "  内容："
             ls -la "$TARGET_DIR"
-          fi
+          done
 
           echo "release_dir=$RELEASE_DIR" >> $GITHUB_OUTPUT
 

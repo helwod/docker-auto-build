@@ -272,8 +272,10 @@ jobs:
 
             # 确定目标目录
             if [ "$IS_ARRAY" = "array" ]; then
-              # 从文件名推导平台目录：realm-x86_64-unknown-linux-musl.tar.gz -> x86_64-unknown-linux-musl
-              PLATFORM=$(basename "$FILENAME" .tar.gz | sed 's/^[^-]*-//')
+              # 从文件名推导平台目录：
+              # realm-x86_64-unknown-linux-musl.tar.gz       -> x86_64-unknown-linux-musl
+              # realm-slim-x86_64-unknown-linux-musl.tar.gz  -> x86_64-unknown-linux-musl
+              PLATFORM=$(basename "$FILENAME" .tar.gz | sed "s/^${GH_REPO}-slim-//; s/^${GH_REPO}-//")
               TARGET_DIR="$SRC_DIR/$RELEASE_PATH/$PLATFORM"
             else
               TARGET_DIR="$SRC_DIR/$RELEASE_PATH"

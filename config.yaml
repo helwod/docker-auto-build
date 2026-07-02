@@ -9,6 +9,8 @@ repositories:
     release_name:
       - realm-x86_64-unknown-linux-musl.tar.gz
       - realm-aarch64-unknown-linux-musl.tar.gz
+      - realm-slim-x86_64-unknown-linux-musl.tar.gz
+      - realm-slim-aarch64-unknown-linux-musl.tar.gz
     dockerfile: Dockerfile
     release_path: out
 

@@ -86,9 +86,16 @@ jobs:
             exit 0
           fi
 
-          # branch 默认 main
+          # branch 未配置时，从 GitHub API 获取仓库默认分支
           if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
-            BRANCH="main"
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+            REPO_INFO=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}")
+            BRANCH=$(echo "$REPO_INFO" | jq -r '.default_branch')
+            if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+              BRANCH="main"
+            fi
+            echo "  检测到默认分支: $BRANCH"
           fi
 
           echo "=== [$NAME] 克隆源码 (branch: $BRANCH) ==="

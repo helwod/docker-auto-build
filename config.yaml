@@ -4,19 +4,19 @@
 #   - repo:       克隆 git 仓库后用源码编译
 # release_name:  Release 文件名（配置后自动下载到 dockerfiles/<name>/release/）
 # repo_url:      git 仓库地址（build_type=dockerfile 时可省略）
-# branch:        git 分支
+# branch:        git 分支（可选，不填时自动获取仓库默认分支）
 repositories:
   - name: realm
-    build_type: dockerfile
+    build_type: repo
     repo_url: https://github.com/zhboner/realm.git
     release_name: realm-x86_64-unknown-linux-musl.tar.gz
 
-  - name: mermaid-live-editor
-    build_type: repo
-    repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
-    branch: develop
-
-  #- name: qwerty-learner
+  #- name: mermaid-live-editor
   #  build_type: repo
-  #  repo_url: https://github.com/RealKai42/qwerty-learner.git
-  #  branch: main
+  #  repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
+  #  branch: develop
+
+  - name: qwerty-learner
+    build_type: repo
+    repo_url: https://github.com/RealKai42/qwerty-learner.git
+    branch: master

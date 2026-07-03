@@ -1,11 +1,5 @@
-version: '3.7'
 services:
   mermaid:
-    build:
-      context: .
-      target: mermaid-dev
-    volumes:
-      - ./src:/app/src
+    image: wrlin1218/mermaid-live-editor:latest
     ports:
-      - 3000:3000
-      - 24678:24678
+      - 18090:8080

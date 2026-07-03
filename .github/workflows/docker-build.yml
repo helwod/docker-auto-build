@@ -158,6 +158,17 @@ jobs:
           RELEASE_NAME="${{ matrix.repo.release_name }}"
           BUILD_TYPE="${{ matrix.repo.build_type }}"
 
+          # build_type=repo 时，把本地 Dockerfile 复制到 repo 目录下
+          # 这样 Dockerfile 的 COPY . ./ 能正确引用源码
+          if [ "$BUILD_TYPE" != "dockerfile" ]; then
+            REPO_DIR="dockerfiles/$NAME/repo"
+            if [ -d "$REPO_DIR" ] && [ -f "$DOCKERFILE" ]; then
+              cp "$DOCKERFILE" "$REPO_DIR/Dockerfile"
+              DOCKERFILE="$REPO_DIR/Dockerfile"
+              echo "  已复制 Dockerfile 到 repo 目录"
+            fi
+          fi
+
           # 确定构建上下文
           # build_type=dockerfile → dockerfiles/$NAME/（仅本地文件 + Release）
           # build_type=repo       → dockerfiles/$NAME/repo/（克隆的源码）

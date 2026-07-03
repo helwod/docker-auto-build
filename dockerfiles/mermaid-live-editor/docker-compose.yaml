@@ -1,0 +1,5 @@
+services:
+  mermaid:
+    image: wrlin1218/mermaid-live-editor:latest
+    ports:
+      - 18090:8080

@@ -163,55 +163,54 @@ jobs:
 
           BUILD_TYPE="${{ matrix.repo.build_type }}"
 
-          # ==== 解析 Dockerfile 路径 ====
-          # config 中可选的 dockerfile 字段，用于指定源仓库内的 Dockerfile 子路径
+          # ==== 解析 Dockerfile 路径与构建上下文 ====
+          # 路径约定：
+          #   - 本地 Dockerfile 里的 COPY 路径相对于 dockerfiles/<name>/
+          #   - 源仓库 Dockerfile 里的 COPY 路径相对于克隆后的 repo 根目录
           DOCKERFILE_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .dockerfile" config.yaml)
           LOCAL_DOCKERFILE="dockerfiles/$NAME/Dockerfile"
           REPO_DIR="dockerfiles/$NAME/repo"
 
-          if [ "$BUILD_TYPE" = "dockerfile" ]; then
-            # dockerfile 模式：必须使用本地 Dockerfile
-            DOCKERFILE="$LOCAL_DOCKERFILE"
-          else
-            # repo 模式：
-            #   1) 优先本地 Dockerfile（复制到 repo 目录覆盖）
-            #   2) 其次用 config 中 dockerfile 字段指定的 repo 内路径
-            #   3) 最后回退到 repo 根目录的 Dockerfile
-            if [ -f "$LOCAL_DOCKERFILE" ]; then
-              cp "$LOCAL_DOCKERFILE" "$REPO_DIR/Dockerfile"
-              DOCKERFILE="$REPO_DIR/Dockerfile"
-              echo "  [Dockerfile] 使用本地文件（已复制到 repo 目录）"
-            elif [ "$DOCKERFILE_CFG" != "null" ] && [ -n "$DOCKERFILE_CFG" ] && [ -f "$REPO_DIR/$DOCKERFILE_CFG" ]; then
-              DOCKERFILE="$REPO_DIR/$DOCKERFILE_CFG"
-              echo "  [Dockerfile] 使用源仓库内: $DOCKERFILE_CFG"
-            elif [ -f "$REPO_DIR/Dockerfile" ]; then
-              DOCKERFILE="$REPO_DIR/Dockerfile"
-              echo "  [Dockerfile] 使用源仓库根目录 Dockerfile"
-            else
-              echo "  [Dockerfile] ERROR: 未找到 Dockerfile"
-              echo "    - 本地: $LOCAL_DOCKERFILE (不存在)"
-              echo "    - repo:  $REPO_DIR/Dockerfile (不存在)"
-              exit 1
-            fi
+          # 检查是否有本地 Dockerfile
+          HAS_LOCAL_DOCKERFILE=false
+          if [ -f "$LOCAL_DOCKERFILE" ]; then
+            HAS_LOCAL_DOCKERFILE=true
           fi
 
-          # 确定构建上下文
-          # build_type=dockerfile → dockerfiles/$NAME/（仅本地文件 + Release）
-          # build_type=repo       → dockerfiles/$NAME/repo/（克隆的源码）
-          # 可用 context 字段手动覆盖
-          CONTEXT_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .context" config.yaml)
-          if [ "$CONTEXT_CFG" = "null" ] || [ -z "$CONTEXT_CFG" ]; then
-            if [ "$BUILD_TYPE" = "dockerfile" ]; then
-              CONTEXT="dockerfiles/$NAME"
-            else
-              CONTEXT="dockerfiles/$NAME/repo"
-            fi
-          elif [ "$CONTEXT_CFG" = "local" ]; then
+          if [ "$BUILD_TYPE" = "dockerfile" ]; then
+            # dockerfile 模式：本地文件 + Release，上下文是 dockerfiles/<name>/
+            DOCKERFILE="$LOCAL_DOCKERFILE"
             CONTEXT="dockerfiles/$NAME"
-          elif [ "$CONTEXT_CFG" = "repo" ]; then
-            CONTEXT="dockerfiles/$NAME/repo"
+            echo "  [Dockerfile] 本地文件 (dockerfile 模式)"
+          elif $HAS_LOCAL_DOCKERFILE; then
+            # repo 模式 + 本地 Dockerfile：
+            #   Dockerfile 的 COPY 路径是相对于 dockerfiles/<name>/ 写的（如 ./repo/...、./release/...）
+            #   所以上下文必须保持 dockerfiles/<name>/，不复制 Dockerfile
+            DOCKERFILE="$LOCAL_DOCKERFILE"
+            CONTEXT="dockerfiles/$NAME"
+            echo "  [Dockerfile] 本地文件（repo + 本地 Dockerfile），上下文: $CONTEXT"
+          elif [ "$DOCKERFILE_CFG" != "null" ] && [ -n "$DOCKERFILE_CFG" ] && [ -f "$REPO_DIR/$DOCKERFILE_CFG" ]; then
+            # repo 模式 + config 指定 dockerfile 路径（源仓库内）
+            DOCKERFILE="$REPO_DIR/$DOCKERFILE_CFG"
+            CONTEXT="$REPO_DIR"
+            echo "  [Dockerfile] 源仓库内: $DOCKERFILE_CFG"
+          elif [ -f "$REPO_DIR/Dockerfile" ]; then
+            # repo 模式 + 源仓库自带 Dockerfile
+            DOCKERFILE="$REPO_DIR/Dockerfile"
+            CONTEXT="$REPO_DIR"
+            echo "  [Dockerfile] 源仓库根目录 Dockerfile"
           else
+            echo "  [Dockerfile] ERROR: 未找到 Dockerfile"
+            echo "    - 本地: $LOCAL_DOCKERFILE (不存在)"
+            echo "    - repo:  $REPO_DIR/Dockerfile (不存在)"
+            exit 1
+          fi
+
+          # config 中的 context 字段可手动覆盖
+          CONTEXT_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .context" config.yaml)
+          if [ "$CONTEXT_CFG" != "null" ] && [ -n "$CONTEXT_CFG" ]; then
             CONTEXT="$CONTEXT_CFG"
+            echo "  上下文已手动覆盖: $CONTEXT"
           fi
 
           echo "============================================"
@@ -225,6 +224,41 @@ jobs:
           if [ ! -f "$DOCKERFILE" ]; then
             echo "  ERROR: Dockerfile 不存在: $DOCKERFILE"
             exit 1
+          fi
+
+          # ==== 预检：验证 Dockerfile 中的 COPY/ADD 源路径是否存在 ====
+          echo ""
+          echo "  [预检] 验证 COPY/ADD 路径..."
+          COPY_PATHS=$(grep -oP '(?:COPY|ADD)\s+\K[^\s]+' "$DOCKERFILE" | grep -v '^--' | sed 's/^"//;s/"$//')
+          ALL_OK=true
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+            # 跳过绝对路径、--from=、$变量、URL
+            case "$src" in
+              /*)   continue ;;
+              --*)  continue ;;
+              \$*)  continue ;;
+              http*) continue ;;
+            esac
+            # 去掉 ["..."] 引号
+            src=$(echo "$src" | sed 's/^"//;s/"$//')
+            if [ -e "$CONTEXT/$src" ]; then
+              echo "    OK  $src"
+            else
+              echo "    MISS  $src  (上下文: $CONTEXT)"
+              ALL_OK=false
+            fi
+          done <<< "$COPY_PATHS"
+
+          if ! $ALL_OK; then
+            echo ""
+            echo "  ========================================"
+            echo "  [预检] 上下文目录结构 ($CONTEXT):"
+            find "$CONTEXT" -maxdepth 2 -not -path '*/.git/*' | head -40
+            echo "  ========================================"
+            echo "  提示: COPY 源路径是相对于构建上下文 ($CONTEXT) 的"
+            echo "  请检查 Dockerfile 中的路径是否正确"
+            echo "  ========================================"
           fi
 
           # build_args

@@ -154,18 +154,37 @@ jobs:
           IMAGE_NAME="${{ secrets.DOCKERHUB_USERNAME }}/$NAME"
           DATE_TAG="$(date +%Y%m%d)"
 
-          DOCKERFILE="dockerfiles/$NAME/Dockerfile"
-          RELEASE_NAME="${{ matrix.repo.release_name }}"
           BUILD_TYPE="${{ matrix.repo.build_type }}"
 
-          # build_type=repo 时，把本地 Dockerfile 复制到 repo 目录下
-          # 这样 Dockerfile 的 COPY . ./ 能正确引用源码
-          if [ "$BUILD_TYPE" != "dockerfile" ]; then
-            REPO_DIR="dockerfiles/$NAME/repo"
-            if [ -d "$REPO_DIR" ] && [ -f "$DOCKERFILE" ]; then
-              cp "$DOCKERFILE" "$REPO_DIR/Dockerfile"
+          # ==== 解析 Dockerfile 路径 ====
+          # config 中可选的 dockerfile 字段，用于指定源仓库内的 Dockerfile 子路径
+          DOCKERFILE_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .dockerfile" config.yaml)
+          LOCAL_DOCKERFILE="dockerfiles/$NAME/Dockerfile"
+          REPO_DIR="dockerfiles/$NAME/repo"
+
+          if [ "$BUILD_TYPE" = "dockerfile" ]; then
+            # dockerfile 模式：必须使用本地 Dockerfile
+            DOCKERFILE="$LOCAL_DOCKERFILE"
+          else
+            # repo 模式：
+            #   1) 优先本地 Dockerfile（复制到 repo 目录覆盖）
+            #   2) 其次用 config 中 dockerfile 字段指定的 repo 内路径
+            #   3) 最后回退到 repo 根目录的 Dockerfile
+            if [ -f "$LOCAL_DOCKERFILE" ]; then
+              cp "$LOCAL_DOCKERFILE" "$REPO_DIR/Dockerfile"
               DOCKERFILE="$REPO_DIR/Dockerfile"
-              echo "  已复制 Dockerfile 到 repo 目录"
+              echo "  [Dockerfile] 使用本地文件（已复制到 repo 目录）"
+            elif [ "$DOCKERFILE_CFG" != "null" ] && [ -n "$DOCKERFILE_CFG" ] && [ -f "$REPO_DIR/$DOCKERFILE_CFG" ]; then
+              DOCKERFILE="$REPO_DIR/$DOCKERFILE_CFG"
+              echo "  [Dockerfile] 使用源仓库内: $DOCKERFILE_CFG"
+            elif [ -f "$REPO_DIR/Dockerfile" ]; then
+              DOCKERFILE="$REPO_DIR/Dockerfile"
+              echo "  [Dockerfile] 使用源仓库根目录 Dockerfile"
+            else
+              echo "  [Dockerfile] ERROR: 未找到 Dockerfile"
+              echo "    - 本地: $LOCAL_DOCKERFILE (不存在)"
+              echo "    - repo:  $REPO_DIR/Dockerfile (不存在)"
+              exit 1
             fi
           fi
 

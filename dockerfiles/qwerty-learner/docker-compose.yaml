@@ -1,9 +1,0 @@
-version: '3'
-
-services:
-  qwertylearner:
-    image: wrlin1218/qwerty-learner:latest
-    container_name: qwerty-learner
-    restart: unless-stopped
-    ports:
-      - '8990:5173'

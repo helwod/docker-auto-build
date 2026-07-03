@@ -341,11 +341,22 @@ jobs:
             --arg full "$FULL_DESC" \
             '{description: $desc, full_description: $full}')
 
-          echo "  更新 DockerHub 描述: ${USERNAME}/${NAME}"
+          echo "  准备更新 DockerHub 描述: ${USERNAME}/${NAME}"
 
-          # 直接用 Basic Auth（PAT token 当密码）更新描述
+          # ==== 核心修复：Docker Hub API 不支持直接用 PAT 做 Basic Auth，必须先换取 JWT ====
+          echo "  🔐 正在获取 Bearer Token..."
+          AUTH_RESP=$(curl -s -X POST "https://hub.docker.com/v2/users/login/" \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"${USERNAME}\", \"password\": \"${TOKEN}\"}")
+          JWT_TOKEN=$(echo "$AUTH_RESP" | jq -r '.token')
+          if [ -z "$JWT_TOKEN" ] || [ "$JWT_TOKEN" = "null" ]; then
+            echo "  ❌ 获取 Token 失败！请检查 DOCKERHUB_USERNAME 和 DOCKERHUB_TOKEN。"
+            echo "  Response: $AUTH_RESP"
+            exit 1
+          fi
+          # 发送 PATCH 请求更新描述
           UPDATE_RESP=$(curl -s -w "\n%{http_code}" -X PATCH \
-            -u "${USERNAME}:${TOKEN}" \
+            -H "Authorization: Bearer $JWT_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             "https://hub.docker.com/v2/repositories/${USERNAME}/${NAME}/")
@@ -354,18 +365,18 @@ jobs:
           BODY=$(echo "$UPDATE_RESP" | sed '$d')
 
           if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ]; then
-            echo "  描述已更新 (HTTP $HTTP_CODE)"
-            echo "  https://hub.docker.com/r/${USERNAME}/${NAME}"
+            echo "  ✅ 描述已更新 (HTTP $HTTP_CODE)"
+            echo "  🔗 https://hub.docker.com/r/${USERNAME}/${NAME}"
           else
-            echo "  WARN: 描述更新失败 (HTTP $HTTP_CODE)"
+            echo "  ❌ WARN: 描述更新失败 (HTTP $HTTP_CODE)"
             echo "  Response: $BODY"
-            if [ "$HTTP_CODE" = "403" ]; then
+            if [ "$HTTP_CODE" = "403" ] || [ "$HTTP_CODE" = "401" ]; then
               echo ""
               echo "  ================================================"
-              echo "  [DockerHub 认证失败]"
-              echo "  确保 DOCKERHUB_TOKEN 具有 Read & Write 权限："
-              echo "  Account Settings → Personal Access Tokens →"
-              echo "  选择 Token → Edit Permissions → Read & Write"
+              echo "  [DockerHub 认证/权限失败]"
+              echo "  1. 确保 DOCKERHUB_TOKEN 是 Personal Access Token"
+              echo "  2. 确保 Token 具有 Read & Write 权限"
+              echo "  3. 如果是组织仓库，USERNAME 需改为组织名"
               echo "  ================================================"
             fi
           fi

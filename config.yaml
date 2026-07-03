@@ -5,6 +5,7 @@
 # release_name:  Release 文件名（配置后自动下载到 dockerfiles/<name>/release/）
 # repo_url:      git 仓库地址（build_type=dockerfile 时可省略）
 # branch:        git 分支（可选，不填时自动获取仓库默认分支）
+# dockerfile:    可选，指定源仓库内 Dockerfile 相对路径
 repositories:
   - name: realm
     build_type: dockerfile

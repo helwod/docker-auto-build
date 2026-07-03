@@ -296,3 +296,61 @@ jobs:
             echo "         $IMAGE_NAME:$DATE_TAG"
           fi
           echo "============================================"
+
+      # ==== 更新 DockerHub 描述信息 ====
+      - name: Update DockerHub description
+        if: github.event_name != 'pull_request'
+        run: |
+          NAME="${{ matrix.repo.name }}"
+          REPO_URL="${{ matrix.repo.repo_url }}"
+          BUILD_TYPE="${{ matrix.repo.build_type }}"
+          USERNAME="${{ secrets.DOCKERHUB_USERNAME }}"
+          TOKEN="${{ secrets.DOCKERHUB_TOKEN }}"
+
+          # 获取 README 内容
+          README_CONTENT=""
+          REPO_DIR="dockerfiles/$NAME/repo"
+
+          if [ "$BUILD_TYPE" != "dockerfile" ] && [ -d "$REPO_DIR" ]; then
+            # repo 模式：从克隆的仓库中读取 README
+            if [ -f "$REPO_DIR/README.md" ]; then
+              README_CONTENT=$(cat "$REPO_DIR/README.md")
+            elif [ -f "$REPO_DIR/README" ]; then
+              README_CONTENT=$(cat "$REPO_DIR/README")
+            fi
+          else
+            # dockerfile 模式：从 GitHub API 获取 README
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
+            GH_Name=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+            if [ -n "$OWNER" ] && [ -n "$GH_Name" ]; then
+              README_CONTENT=$(curl -s -H "Accept: application/vnd.github.raw" \
+                "https://api.github.com/repos/${OWNER}/${GH_Name}/readme" | head -c 25000)
+            fi
+          fi
+
+          # 构建描述信息
+          SHORT_DESC="Auto-built from ${REPO_URL:-N/A}"
+          FULL_DESC="## Source Repository\n\n${REPO_URL:-N/A}\n\n---\n\n${README_CONTENT}"
+
+          # 转义 JSON
+          ESCAPED_FULL=$(echo "$FULL_DESC" | jq -Rs '.')
+
+          echo "  更新 DockerHub 描述..."
+          LOGIN_RESP=$(curl -s -H "Content-Type: application/json" \
+            -d "{\"username\":\"$USERNAME\",\"password\":\"$TOKEN\"}" \
+            "https://hub.docker.com/v2/users/login/")
+          JWT=$(echo "$LOGIN_RESP" | jq -r '.token')
+
+          if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
+            echo "  WARN: 登录 DockerHub 失败，跳过描述更新"
+            exit 0
+          fi
+
+          curl -s -X PATCH \
+            -H "Authorization: Bearer $JWT" \
+            -H "Content-Type: application/json" \
+            -d "{\"description\":\"${SHORT_DESC}\",\"full_description\":${ESCAPED_FULL}}" \
+            "https://hub.docker.com/v2/repositories/${USERNAME}/${NAME}/"
+
+          echo ""
+          echo "  DockerHub 描述已更新: https://hub.docker.com/r/${USERNAME}/${NAME}"

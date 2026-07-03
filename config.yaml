@@ -1,17 +1,22 @@
 # 需要自动构建的Docker镜像配置
+# build_type:   构建模式（可选，默认 repo）
+#   - dockerfile: 仅用本地 dockerfiles/<name>/ 下的文件编译，不克隆 git 仓库
+#   - repo:       克隆 git 仓库后用源码编译
 # release_name:  Release 文件名（配置后自动下载到 dockerfiles/<name>/release/）
-# context:       构建上下文（可选，local=dockerfiles/<name>/，repo=dockerfiles/<name>/repo/）
-#                默认：有 release_name → local，无 release_name → repo
+# repo_url:      git 仓库地址（build_type=dockerfile 时可省略）
+# branch:        git 分支
 repositories:
   - name: realm
+    build_type: dockerfile
     repo_url: https://github.com/zhboner/realm.git
-    branch: master
     release_name: realm-x86_64-unknown-linux-musl.tar.gz
 
   - name: mermaid-live-editor
+    build_type: repo
     repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
     branch: develop
 
   #- name: qwerty-learner
+  #  build_type: repo
   #  repo_url: https://github.com/RealKai42/qwerty-learner.git
   #  branch: main

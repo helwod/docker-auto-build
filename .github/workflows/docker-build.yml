@@ -72,15 +72,26 @@ jobs:
           chmod +x /usr/local/bin/yq
           sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
-      # ==== 克隆源仓库 ====
+      # ==== 克隆源仓库（仅 build_type=repo）====
       - name: Clone source repository
+        if: matrix.repo.build_type != 'dockerfile'
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
           BRANCH="${{ matrix.repo.branch }}"
           REPO_DIR="dockerfiles/$NAME/repo"
 
-          echo "=== [$NAME] 克隆源码 ==="
+          if [ -z "$REPO_URL" ] || [ "$REPO_URL" = "null" ]; then
+            echo "=== [$NAME] 无 repo_url，跳过克隆 ==="
+            exit 0
+          fi
+
+          # branch 默认 main
+          if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+            BRANCH="main"
+          fi
+
+          echo "=== [$NAME] 克隆源码 (branch: $BRANCH) ==="
           rm -rf "$REPO_DIR"
           mkdir -p "$REPO_DIR"
           git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$REPO_DIR"
@@ -96,6 +107,12 @@ jobs:
           if [ -z "$RELEASE_NAME" ] || [ "$RELEASE_NAME" = "null" ]; then
             echo "=== [$NAME] 无 release_name，跳过 ==="
             exit 0
+          fi
+
+          # repo_url 可能省略，但下载 Release 需要它
+          if [ -z "$REPO_URL" ] || [ "$REPO_URL" = "null" ]; then
+            echo "  ERROR: release_name 配置了但 repo_url 为空，无法获取 Release"
+            exit 1
           fi
 
           RELEASE_DIR="dockerfiles/$NAME/release"
@@ -139,12 +156,15 @@ jobs:
 
           DOCKERFILE="dockerfiles/$NAME/Dockerfile"
           RELEASE_NAME="${{ matrix.repo.release_name }}"
+          BUILD_TYPE="${{ matrix.repo.build_type }}"
 
-          # 确定构建上下文：优先用 config 中的 context 字段
+          # 确定构建上下文
+          # build_type=dockerfile → dockerfiles/$NAME/（仅本地文件 + Release）
+          # build_type=repo       → dockerfiles/$NAME/repo/（克隆的源码）
+          # 可用 context 字段手动覆盖
           CONTEXT_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .context" config.yaml)
           if [ "$CONTEXT_CFG" = "null" ] || [ -z "$CONTEXT_CFG" ]; then
-            # 默认：有 release_name → local，无 → repo
-            if [ -n "$RELEASE_NAME" ] && [ "$RELEASE_NAME" != "null" ]; then
+            if [ "$BUILD_TYPE" = "dockerfile" ]; then
               CONTEXT="dockerfiles/$NAME"
             else
               CONTEXT="dockerfiles/$NAME/repo"

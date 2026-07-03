@@ -334,13 +334,7 @@ jobs:
 
           # 用 jq 安全构建 JSON（避免特殊字符破坏格式）
           SHORT_DESC="Auto-built from ${REPO_URL:-N/A}"
-          FULL_DESC="## Source Repository
-
-${REPO_URL:-N/A}
-
----
-
-${README_CONTENT}"
+          FULL_DESC=$(printf "## Source Repository\n\n%s\n\n---\n\n%s" "${REPO_URL:-N/A}" "${README_CONTENT}")
 
           PAYLOAD=$(jq -n \
             --arg desc "$SHORT_DESC" \

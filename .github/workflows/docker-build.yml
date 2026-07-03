@@ -343,22 +343,9 @@ jobs:
 
           echo "  更新 DockerHub 描述: ${USERNAME}/${NAME}"
 
-          # 登录获取 token
-          LOGIN_RESP=$(curl -s -H "Content-Type: application/json" \
-            -d "{\"username\":\"$USERNAME\",\"password\":\"$TOKEN\"}" \
-            "https://hub.docker.com/v2/users/login/")
-          JWT=$(echo "$LOGIN_RESP" | jq -r '.token')
-
-          if [ -z "$JWT" ] || [ "$JWT" = "null" ]; then
-            echo "  ERROR: DockerHub 登录失败"
-            echo "  Response: $LOGIN_RESP"
-            exit 0
-          fi
-          echo "  登录成功"
-
-          # 更新描述
+          # 直接用 Basic Auth（PAT token 当密码）更新描述
           UPDATE_RESP=$(curl -s -w "\n%{http_code}" -X PATCH \
-            -H "Authorization: Bearer $JWT" \
+            -u "${USERNAME}:${TOKEN}" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             "https://hub.docker.com/v2/repositories/${USERNAME}/${NAME}/")
@@ -375,11 +362,10 @@ jobs:
             if [ "$HTTP_CODE" = "403" ]; then
               echo ""
               echo "  ================================================"
-              echo "  [DockerHub Token 权限不足]"
-              echo "  请在 DockerHub 中为 DOCKERHUB_TOKEN 分配权限："
+              echo "  [DockerHub 认证失败]"
+              echo "  确保 DOCKERHUB_TOKEN 具有 Read & Write 权限："
               echo "  Account Settings → Personal Access Tokens →"
-              echo "  选择对应 Token → Edit → 确保勾选 Read & Write"
-              echo "  或重新生成一个具有 Read & Write 权限的 Token"
+              echo "  选择 Token → Edit Permissions → Read & Write"
               echo "  ================================================"
             fi
           fi

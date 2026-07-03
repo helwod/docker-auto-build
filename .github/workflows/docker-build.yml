@@ -372,4 +372,14 @@ jobs:
           else
             echo "  WARN: 描述更新失败 (HTTP $HTTP_CODE)"
             echo "  Response: $BODY"
+            if [ "$HTTP_CODE" = "403" ]; then
+              echo ""
+              echo "  ================================================"
+              echo "  [DockerHub Token 权限不足]"
+              echo "  请在 DockerHub 中为 DOCKERHUB_TOKEN 分配权限："
+              echo "  Account Settings → Personal Access Tokens →"
+              echo "  选择对应 Token → Edit → 确保勾选 Read & Write"
+              echo "  或重新生成一个具有 Read & Write 权限的 Token"
+              echo "  ================================================"
+            fi
           fi

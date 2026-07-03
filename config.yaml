@@ -17,11 +17,11 @@ repositories:
     branch: develop
 
   - name: qwerty-learner
-    build_type: dockerfile
+    build_type: repo
     repo_url: https://github.com/RealKai42/qwerty-learner.git
     branch: master
 
   - name: reality
-    build_type: dockerfile
+    build_type: repo
     repo_url: https://github.com/XTLS/Xray-core.git
     branch: main

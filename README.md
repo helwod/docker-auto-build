@@ -35,7 +35,7 @@
 | Secret | 说明 |
 |--------|------|
 | `DOCKERHUB_USERNAME` | DockerHub 用户名 |
-| `DOCKERHUB_TOKEN` | DockerHub Access Token（需读写权限） |
+| `DOCKERHUB_TOKEN` | DockerHub Access Token（需 **Read, Write, Delete** 权限） |
 
 ### 第二步：编辑 `config.yaml`
 
@@ -194,6 +194,9 @@ dockerfiles/mermaid-live-editor/repo/Dockerfile
 ```
 
 ## 常见问题
+
+**Q: 描述更新失败 403？**
+A: DockerHub Access Token 需要 **Read, Write, Delete** 权限。Account Settings → Personal Access Tokens → 选择 Token → Edit Permissions → 确保三项全勾选。
 
 **Q: `release_name` 无法匹配？**
 A: `release_name` 使用模糊匹配（`contains`），只需包含能唯一标识文件的字样，如 `linux-amd64` 可匹配 `app-linux-amd64-v2.0.tar.gz`。

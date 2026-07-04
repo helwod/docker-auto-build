@@ -6,7 +6,10 @@
 # repo_url:      git 仓库地址（build_type=dockerfile 时可省略）
 # branch:        git 分支（可选，不填时自动获取仓库默认分支）
 # dockerfile:    可选，指定源仓库内 Dockerfile 相对路径
-# registry:      镜像仓库（可选，默认 dockerhub；可选 ghcr 推送到 GitHub Container Registry）
+# registry:      推送目标（可选，默认 dockerhub）
+#   - dockerhub: 仅推送到 DockerHub
+#   - ghcr:      仅推送到 GitHub Container Registry
+#   - both:      同时推送到 DockerHub 和 GHCR
 repositories:
   - name: realm
     build_type: dockerfile
@@ -18,16 +21,16 @@ repositories:
     build_type: repo
     repo_url: https://github.com/mermaid-js/mermaid-live-editor.git
     branch: develop
-    registry: ghcr
+    registry: both
 
   - name: qwerty-learner
     build_type: repo
     repo_url: https://github.com/RealKai42/qwerty-learner.git
     branch: master
-    registry: ghcr
+    registry: dockerhub
 
   - name: reality
     build_type: repo
     repo_url: https://github.com/XTLS/Xray-core.git
     branch: main
-    registry: ghcr
+    registry: dockerhub

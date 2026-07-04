@@ -34,3 +34,9 @@ repositories:
     repo_url: https://github.com/XTLS/Xray-core.git
     branch: main
     registry: dockerhub
+
+  - name: deepwhale
+    build_type: repo
+    repo_url: https://github.com/bchhngsaygez/deepwhale
+    branch: main
+    registry: dockerhub

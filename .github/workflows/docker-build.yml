@@ -141,16 +141,29 @@ jobs:
           GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
 
           echo "=== [$NAME] 下载 Release: $OWNER/$GH_REPO ==="
-          LATEST=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest")
+          LATEST=$(curl -sf -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest")
+
+          # 检查 API 返回是否有效
+          if [ -z "$LATEST" ] || ! echo "$LATEST" | jq -e '.tag_name' >/dev/null 2>&1; then
+            echo "  ERROR: 无法获取 Release 信息"
+            echo "  可能原因：API 限流（未认证 60 次/小时）、仓库无 Release、或仓库名错误"
+            echo "  Response: ${LATEST:0:500}"
+            exit 1
+          fi
+
           TAG=$(echo "$LATEST" | jq -r '.tag_name')
           echo "  Tag: $TAG"
 
+          # 安全提取下载 URL（assets 为空时不报错）
           DOWNLOAD_URL=$(echo "$LATEST" | jq -r --arg name "$RELEASE_NAME" \
-            '.assets[] | select(.name | contains($name)) | .browser_download_url')
+            '(.assets // [])[] | select(.name | contains($name)) | .browser_download_url' | head -1)
 
           if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-            echo "  未匹配 '$RELEASE_NAME'，跳过"
-            exit 0
+            echo "  ERROR: Release 中未找到匹配 '$RELEASE_NAME' 的文件"
+            echo "  可用文件："
+            echo "$LATEST" | jq -r '(.assets // [])[] | .name' | sed 's/^/    - /'
+            exit 1
           fi
 
           FILENAME=$(basename "$DOWNLOAD_URL")

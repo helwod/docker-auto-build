@@ -128,8 +128,8 @@ jobs:
           CURRENT_HASH=""
 
           if [ -n "$REPO_URL" ]; then
-            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
-            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/.]*\).*#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/[^/]*/\([^/.]*\).*#\1#p')
 
             # branch 未配置时获取默认分支
             if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
@@ -193,8 +193,8 @@ jobs:
 
           # branch 未配置时，从 GitHub API 获取仓库默认分支
           if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
-            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
-            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/.]*\).*#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/[^/]*/\([^/.]*\).*#\1#p')
             REPO_INFO=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}")
             BRANCH=$(echo "$REPO_INFO" | jq -r '.default_branch')
             if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
@@ -231,12 +231,12 @@ jobs:
           RELEASE_DIR="dockerfiles/$NAME/release"
           mkdir -p "$RELEASE_DIR"
 
-          OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
-          GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
+          OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/.]*\).*#\1#p')
+          GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/[^/]*/\([^/.]*\).*#\1#p')
 
           echo "=== [$NAME] 下载 Release: $OWNER/$GH_REPO ==="
-          LATEST=$(curl -sf -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest")
+          LATEST=$(curl -s -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest" || echo "")
 
           # 检查 API 返回是否有效
           if [ -z "$LATEST" ] || ! echo "$LATEST" | jq -e '.tag_name' >/dev/null 2>&1; then
@@ -494,8 +494,8 @@ jobs:
             fi
             echo "  README: 从克隆仓库读取 ($(echo "$README_CONTENT" | wc -c) bytes)"
           elif [ -n "$REPO_URL" ]; then
-            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
-            GH_Name=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/.]*\).*#\1#p')
+            GH_Name=$(echo "$REPO_URL" | sed -n 's#https://github.com/[^/]*/\([^/.]*\).*#\1#p')
             if [ -n "$OWNER" ] && [ -n "$GH_Name" ]; then
               README_CONTENT=$(curl -sf -H "Accept: application/vnd.github.raw" \
                 "https://api.github.com/repos/${OWNER}/${GH_Name}/readme" 2>/dev/null | head -c 25000)

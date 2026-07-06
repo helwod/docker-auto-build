@@ -34,3 +34,9 @@ repositories:
     repo_url: https://github.com/XTLS/Xray-core.git
     branch: main
     registry: dockerhub
+
+  - name: 91Writing
+    build_type: repo
+    repo_url: https://github.com/ponysb/91Writing.git
+    branch: main
+    registry: dockerhub

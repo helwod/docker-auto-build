@@ -84,9 +84,102 @@ jobs:
           chmod +x /usr/local/bin/yq
           sudo apt-get update -qq && sudo apt-get install -y -qq jq
 
+      # ==== 恢复上次构建状态 ====
+      - name: Restore build state cache
+        id: cache-restore
+        uses: actions/cache@v4
+        with:
+          path: .build-state
+          key: build-state-${{ matrix.repo.name }}-${{ github.run_id }}
+          restore-keys: |
+            build-state-${{ matrix.repo.name }}-
+
+      # ==== 检查源码/Release 是否有更新 ====
+      - name: Check for updates
+        id: check
+        run: |
+          NAME="${{ matrix.repo.name }}"
+          REPO_URL="${{ matrix.repo.repo_url }}"
+          BRANCH="${{ matrix.repo.branch }}"
+          BUILD_TYPE="${{ matrix.repo.build_type }}"
+          RELEASE_NAME="${{ matrix.repo.release_name }}"
+          [ "$BUILD_TYPE" = "null" ] && BUILD_TYPE="repo"
+          [ "$REPO_URL" = "null" ] && REPO_URL=""
+
+          # 手动触发或 PR 时强制构建
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "  手动/PR 触发，强制构建"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          STATE_FILE=".build-state/${NAME}.txt"
+          mkdir -p .build-state
+
+          # 恢复上次构建状态
+          if [ -f "$STATE_FILE" ]; then
+            LAST_HASH=$(cat "$STATE_FILE")
+            echo "  上次构建标记: $LAST_HASH"
+          else
+            LAST_HASH=""
+            echo "  无历史记录，首次构建"
+          fi
+
+          CURRENT_HASH=""
+
+          if [ -n "$REPO_URL" ]; then
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+
+            # branch 未配置时获取默认分支
+            if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
+              REPO_INFO=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}")
+              BRANCH=$(echo "$REPO_INFO" | jq -r '.default_branch')
+              [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ] && BRANCH="main"
+            fi
+
+            if [ "$BUILD_TYPE" = "dockerfile" ] && [ -n "$RELEASE_NAME" ] && [ "$RELEASE_NAME" != "null" ]; then
+              # dockerfile 模式：用 Release tag 作为标记
+              LATEST=$(curl -sf -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest" 2>/dev/null)
+              CURRENT_HASH=$(echo "$LATEST" | jq -r '.tag_name // empty')
+              echo "  当前 Release tag: ${CURRENT_HASH:-N/A}"
+            else
+              # repo 模式：用分支最新 commit SHA 作为标记
+              BRANCH_INFO=$(curl -sf -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${GH_REPO}/branches/${BRANCH}" 2>/dev/null)
+              CURRENT_HASH=$(echo "$BRANCH_INFO" | jq -r '.commit.sha // empty')
+              echo "  当前 commit: ${CURRENT_HASH:-N/A}"
+            fi
+          fi
+
+          # 检查本地文件是否有变更（dockerfiles/<name>/ 目录）
+          LOCAL_CHANGED=false
+          LOCAL_DIFF=$(git diff --name-only HEAD~1 HEAD -- "dockerfiles/${NAME}/" 2>/dev/null || echo "")
+          if [ -n "$LOCAL_DIFF" ]; then
+            LOCAL_CHANGED=true
+            echo "  本地文件有变更:"
+            echo "$LOCAL_DIFF" | sed 's/^/    /'
+          fi
+
+          # 判断是否需要构建
+          if [ -z "$LAST_HASH" ]; then
+            echo "  → 首次构建"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          elif [ "$CURRENT_HASH" = "$LAST_HASH" ] && ! $LOCAL_CHANGED; then
+            echo "  → 源码无更新，本地无变更，跳过构建"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          else
+            echo "  → 检测到更新，需要构建"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          fi
+
+          # 保存当前标记（供构建成功后写入）
+          echo "$CURRENT_HASH" > "$STATE_FILE.new"
+
       # ==== 克隆源仓库（仅 build_type=repo）====
       - name: Clone source repository
-        if: matrix.repo.build_type != 'dockerfile'
+        if: matrix.repo.build_type != 'dockerfile' && steps.check.outputs.should_build == 'true'
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
@@ -118,6 +211,7 @@ jobs:
 
       # ==== 下载 Release ====
       - name: Download GitHub Release
+        if: steps.check.outputs.should_build == 'true'
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"
@@ -181,6 +275,7 @@ jobs:
 
       # ==== 构建并推送 ====
       - name: Build and push Docker image
+        if: steps.check.outputs.should_build == 'true'
         run: |
           NAME="${{ matrix.repo.name }}"
           DATE_TAG="$(date +%Y%m%d)"
@@ -350,9 +445,30 @@ jobs:
           fi
           echo "============================================"
 
+          # 构建成功后保存状态（用于下次跳过判断）
+          if [ -f ".build-state/${NAME}.txt.new" ]; then
+            cp ".build-state/${NAME}.txt.new" ".build-state/${NAME}.txt"
+            echo "  构建状态已保存"
+          fi
+
+      - name: Save build state cache
+        if: steps.check.outputs.should_build == 'true' && always()
+        uses: actions/cache/save@v4
+        with:
+          path: .build-state
+          key: build-state-${{ matrix.repo.name }}
+
+      - name: Skipped (no updates)
+        if: steps.check.outputs.should_build == 'false'
+        run: |
+          NAME="${{ matrix.repo.name }}"
+          echo "============================================"
+          echo "  [$NAME] 源码无更新，跳过构建"
+          echo "============================================"
+
       # ==== 更新 DockerHub 描述信息 ====
       - name: Update DockerHub description
-        if: github.event_name != 'pull_request' && matrix.repo.registry != 'ghcr'
+        if: steps.check.outputs.should_build == 'true' && github.event_name != 'pull_request' && matrix.repo.registry != 'ghcr'
         run: |
           NAME="${{ matrix.repo.name }}"
           REPO_URL="${{ matrix.repo.repo_url }}"

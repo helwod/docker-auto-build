@@ -40,6 +40,11 @@ repositories:
     repo_url: https://github.com/ponysb/91Writing.git
     branch: main
     registry: dockerhub
+  - name: aidu2api
+    build_type: repo
+    repo_url: https://github.com/dijiaozhibei-top/baidu2api.git
+    branch: main
+    registry: dockerhub
 
   - name: deepwhale
     build_type: repo

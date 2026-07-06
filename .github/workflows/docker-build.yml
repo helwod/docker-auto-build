@@ -128,8 +128,8 @@ jobs:
           CURRENT_HASH=""
 
           if [ -n "$REPO_URL" ]; then
-            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
-            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
 
             # branch 未配置时获取默认分支
             if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
@@ -140,15 +140,15 @@ jobs:
 
             if [ "$BUILD_TYPE" = "dockerfile" ] && [ -n "$RELEASE_NAME" ] && [ "$RELEASE_NAME" != "null" ]; then
               # dockerfile 模式：用 Release tag 作为标记
-              LATEST=$(curl -sf -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest" 2>/dev/null)
-              CURRENT_HASH=$(echo "$LATEST" | jq -r '.tag_name // empty')
+              LATEST=$(curl -s -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${GH_REPO}/releases/latest" 2>/dev/null || echo "")
+              CURRENT_HASH=$(echo "$LATEST" | jq -r '.tag_name // empty' 2>/dev/null)
               echo "  当前 Release tag: ${CURRENT_HASH:-N/A}"
             else
               # repo 模式：用分支最新 commit SHA 作为标记
-              BRANCH_INFO=$(curl -sf -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${OWNER}/${GH_REPO}/branches/${BRANCH}" 2>/dev/null)
-              CURRENT_HASH=$(echo "$BRANCH_INFO" | jq -r '.commit.sha // empty')
+              BRANCH_INFO=$(curl -s -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${OWNER}/${GH_REPO}/branches/${BRANCH}" 2>/dev/null || echo "")
+              CURRENT_HASH=$(echo "$BRANCH_INFO" | jq -r '.commit.sha // empty' 2>/dev/null)
               echo "  当前 commit: ${CURRENT_HASH:-N/A}"
             fi
           fi
@@ -193,8 +193,8 @@ jobs:
 
           # branch 未配置时，从 GitHub API 获取仓库默认分支
           if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
-            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
-            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+            OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
+            GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
             REPO_INFO=$(curl -s "https://api.github.com/repos/${OWNER}/${GH_REPO}")
             BRANCH=$(echo "$REPO_INFO" | jq -r '.default_branch')
             if [ -z "$BRANCH" ] || [ "$BRANCH" = "null" ]; then
@@ -231,8 +231,8 @@ jobs:
           RELEASE_DIR="dockerfiles/$NAME/release"
           mkdir -p "$RELEASE_DIR"
 
-          OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\1#p')
-          GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\.git#\2#p')
+          OWNER=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\1#p')
+          GH_REPO=$(echo "$REPO_URL" | sed -n 's#https://github.com/\([^/]*\)/\([^/]*\)\(\.git\)\?#\2#p')
 
           echo "=== [$NAME] 下载 Release: $OWNER/$GH_REPO ==="
           LATEST=$(curl -sf -H "Accept: application/vnd.github+json" \
@@ -278,14 +278,16 @@ jobs:
         if: steps.check.outputs.should_build == 'true'
         run: |
           NAME="${{ matrix.repo.name }}"
+          # Docker 镜像名必须全小写
+          IMAGE_NAME_LOWER=$(echo "$NAME" | tr '[:upper:]' '[:lower:]')
           DATE_TAG="$(date +%Y%m%d)"
 
           # 解析推送目标 registries（支持 dockerhub / ghcr / both）
           REGISTRY_CFG=$(yq -r ".repositories[] | select(.name == \"$NAME\") | .registry" config.yaml)
           [ "$REGISTRY_CFG" = "null" ] || [ -z "$REGISTRY_CFG" ] && REGISTRY_CFG="dockerhub"
 
-          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/$NAME"
-          GHCR_IMAGE="ghcr.io/${{ github.repository_owner }}/$NAME"
+          DOCKERHUB_IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/$IMAGE_NAME_LOWER"
+          GHCR_IMAGE="ghcr.io/${{ github.repository_owner }}/$IMAGE_NAME_LOWER"
 
           # 构建 -t 标签列表
           TAGS=""

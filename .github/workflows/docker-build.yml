@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
@@ -83,16 +83,6 @@ jobs:
           wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/local/bin/yq
           chmod +x /usr/local/bin/yq
           sudo apt-get update -qq && sudo apt-get install -y -qq jq
-
-      # ==== 恢复上次构建状态 ====
-      - name: Restore build state cache
-        id: cache-restore
-        uses: actions/cache@v4
-        with:
-          path: .build-state
-          key: build-state-${{ matrix.repo.name }}-${{ github.run_id }}
-          restore-keys: |
-            build-state-${{ matrix.repo.name }}-
 
       # ==== 检查源码/Release 是否有更新 ====
       - name: Check for updates
@@ -450,15 +440,33 @@ jobs:
           # 构建成功后保存状态（用于下次跳过判断）
           if [ -f ".build-state/${NAME}.txt.new" ]; then
             cp ".build-state/${NAME}.txt.new" ".build-state/${NAME}.txt"
-            echo "  构建状态已保存"
+            echo "  构建状态已写入"
           fi
 
-      - name: Save build state cache
+      - name: Commit build state
         if: steps.check.outputs.should_build == 'true' && always()
-        uses: actions/cache/save@v4
-        with:
-          path: .build-state
-          key: build-state-${{ matrix.repo.name }}
+        run: |
+          NAME="${{ matrix.repo.name }}"
+          STATE_FILE=".build-state/${NAME}.txt"
+
+          if [ ! -f "$STATE_FILE" ]; then
+            echo "  无状态文件，跳过提交"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$STATE_FILE"
+
+          if git diff --cached --quiet; then
+            echo "  状态无变化，跳过提交"
+            exit 0
+          fi
+
+          git commit -m "chore: update build state for ${NAME} [skip ci]"
+          # 拉取合并后推送，处理并行 job 的竞争
+          git pull --rebase --no-edit origin main || true
+          git push origin main || echo "  WARN: 推送状态文件失败（不影响镜像构建）"
 
       - name: Skipped (no updates)
         if: steps.check.outputs.should_build == 'false'

@@ -96,9 +96,9 @@ jobs:
           [ "$BUILD_TYPE" = "null" ] && BUILD_TYPE="repo"
           [ "$REPO_URL" = "null" ] && REPO_URL=""
 
-          # 手动触发或 PR 时强制构建
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "  手动/PR 触发，强制构建"
+          # PR 时强制构建，手动触发按正常逻辑判断
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "  PR 触发，强制构建"
             echo "should_build=true" >> $GITHUB_OUTPUT
             exit 0
           fi

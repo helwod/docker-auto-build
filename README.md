@@ -202,7 +202,7 @@ Dockerfile 中 `COPY` 源路径的根 = 构建上下文（Context）：
 | 本地 `dockerfiles/<name>/` | git diff HEAD~1 | 有文件变更即触发 |
 
 - 标记存入 `.build-state/<name>.txt`，构建成功后提交回仓库
-- 手动触发 / PR 始终强制构建
+- Push 和手动触发均遵循增量判断；PR 始终强制构建
 - 无更新时输出 `源码无更新，跳过构建`
 
 ---
@@ -233,8 +233,8 @@ GHCR:      ghcr.io/<owner>/<name>:latest   ghcr.io/<owner>/<name>:20260704
 | 触发 | 条件 | push 镜像 | 更新描述 | 增量跳过 |
 |------|------|:--:|:--:|:--:|
 | **Push** | 推送到 main/master，变更 `dockerfiles/**`/`config.yaml`/workflow | ✓ | ✓ | ✓ |
+| **手动** | Actions → Run workflow | ✓ | ✓ | ✓ |
 | **PR** | PR 到 main/master | ✗ | ✗ | ✗（始终构建） |
-| **手动** | Actions → Run workflow | ✓ | ✓ | ✗（始终构建） |
 
 ---
 

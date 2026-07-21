@@ -52,3 +52,11 @@ repositories:
     repo_url: https://github.com/bchhngsaygez/deepwhale
     branch: main
     registry: dockerhub
+
+#OCR文档识别工具
+  - name: docling
+    build_type: repo
+    repo_url: https://github.com/docling-project/docling
+    branch: main
+    registry: dockerhub
+    

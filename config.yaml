@@ -11,11 +11,11 @@
 #   - ghcr:      仅推送到 GitHub Container Registry
 #   - both:      同时推送到 DockerHub 和 GHCR
 repositories:
-  - name: realm
-    build_type: dockerfile
-    repo_url: https://github.com/zhboner/realm.git
-    release_name: realm-x86_64-unknown-linux-musl.tar.gz
-    registry: ghcr
+#  - name: realm
+#    build_type: dockerfile
+#    repo_url: https://github.com/zhboner/realm.git
+#    release_name: realm-x86_64-unknown-linux-musl.tar.gz
+#    registry: ghcr
 
   - name: mermaid-live-editor
     build_type: repo
@@ -23,42 +23,42 @@ repositories:
     branch: develop
     registry: both
 
-  - name: qwerty-learner
-    build_type: repo
-    repo_url: https://github.com/RealKai42/qwerty-learner.git
-    branch: master
-    registry: dockerhub
+#  - name: qwerty-learner
+#    build_type: repo
+#    repo_url: https://github.com/RealKai42/qwerty-learner.git
+#    branch: master
+#    registry: dockerhub
 
-  - name: reality
-    build_type: repo
-    repo_url: https://github.com/XTLS/Xray-core.git
-    branch: main
-    registry: dockerhub
+#  - name: reality
+#    build_type: repo
+#    repo_url: https://github.com/XTLS/Xray-core.git
+#    branch: main
+#    registry: dockerhub
 
-  - name: 91writing
-    build_type: repo
-    repo_url: https://github.com/ponysb/91Writing.git
-    branch: main
-    registry: dockerhub
+#  - name: 91writing
+#    build_type: repo
+#    repo_url: https://github.com/ponysb/91Writing.git
+#    branch: main
+#    registry: dockerhub
     
-  - name: baidu2api
-    build_type: repo
-    repo_url: https://github.com/dijiaozhibei-top/baidu2api.git
-    branch: main
-    registry: dockerhub
+ # - name: baidu2api
+ #   build_type: repo
+ #   repo_url: https://github.com/dijiaozhibei-top/baidu2api.git
+ #   branch: main
+ #   registry: dockerhub
 
-  - name: deepwhale
-    build_type: repo
-    repo_url: https://github.com/bchhngsaygez/deepwhale
-    branch: main
-    registry: dockerhub
+ # - name: deepwhale
+ #   build_type: repo
+ #   repo_url: https://github.com/bchhngsaygez/deepwhale
+ #   branch: main
+ #   registry: dockerhub
 
 #OCR文档识别工具
-  - name: docling
-    build_type: repo
-    repo_url: https://github.com/docling-project/docling
-    branch: main
-    registry: dockerhub
+ # - name: docling
+ #   build_type: repo
+ #   repo_url: https://github.com/docling-project/docling
+ #   branch: main
+ #   registry: dockerhub
 
  #OCR识别webui   
   - name: docling-webui

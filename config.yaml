@@ -59,4 +59,10 @@ repositories:
     repo_url: https://github.com/docling-project/docling
     branch: main
     registry: dockerhub
-    
+
+ #OCR识别webui   
+  - name: docling-webui
+    build_type: repo
+    repo_url: https://github.com/helwod/docling-webui
+    branch: main
+    registry: dockerhub

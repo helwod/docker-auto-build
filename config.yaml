@@ -69,7 +69,7 @@ repositories:
  #   registry: dockerhub
 
 
-   - name: docling-webui
+  - name: docling-webui
     build_type: repo
     repo_url: https://github.com/helwod/magic-api
 #    branch: main

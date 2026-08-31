@@ -71,6 +71,6 @@ repositories:
 # api设置平台
   - name: magic-api
     build_type: repo
-    repo_url: https://github.com/helwod/magic-api
+    repo_url: https://github.com/helwod/magic-api-docker
 #    branch: main
     registry: dockerhub

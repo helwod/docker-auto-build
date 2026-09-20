@@ -74,3 +74,11 @@ repositories:
     repo_url: https://github.com/helwod/magic-api-docker
 #    branch: main
     registry: dockerhub
+
+# api设置平台
+  - name: YYB-Go-Enhanced
+    build_type: repo
+    repo_url: https://github.com/525815266/YYB-Go-Enhanced
+#    branch: main
+    registry: dockerhub
+    

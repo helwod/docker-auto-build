@@ -83,3 +83,9 @@ repositories:
     registry: dockerhub
 
 
+# 滑块OCR
+  - name: ddddocr
+    build_type: repo
+    repo_url: https://github.com/86maid/ddddocr
+#    branch: main
+    registry: both

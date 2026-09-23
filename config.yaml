@@ -82,9 +82,9 @@ repositories:
 #    branch: main
     registry: dockerhub
 
-#滑块OCR识别https://github.com/sml2h3/ddddocr
-  - name: YYB-Go-Enhanced
+#滑块OCR识别
+  - name: ddddocr
     build_type: repo
-    repo_url: https://github.com/525815266/YYB-Go-Enhanced
+    repo_url: https://github.com/sml2h3/ddddocr
 #    branch: main
     registry: both
